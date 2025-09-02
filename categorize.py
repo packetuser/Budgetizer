@@ -328,6 +328,11 @@ def inspect_csv_structure(file_path):
 
 def safe_to_numeric(series, default_value=0):
     """Safely convert series to numeric, replacing errors with default value."""
+    if isinstance(series, pd.Series):
+        # Remove currency symbols and commas
+        series = series.astype(str).str.replace('$', '', regex=False)
+        series = series.str.replace(',', '', regex=False)
+        series = series.str.strip()
     return pd.to_numeric(series, errors='coerce').fillna(default_value)
 
 def normalize_bank_csv(path):
@@ -527,8 +532,17 @@ def normalize_credit_csv(path):
         # For credit cards: Debit = purchases (negative), Credit = payments (positive)
         renamed_df['Amount'] = credit_col - debit_col
     else:
-        print("⚠️ No amount column found - setting to 0")
-        renamed_df['Amount'] = 0
+        # Check if there are still Debit/Credit columns in original df
+        if 'Debit' in df.columns and 'Credit' in df.columns:
+            print("📊 Using original Debit/Credit columns")
+            debit_col = safe_to_numeric(df.get('Debit', 0))
+            credit_col = safe_to_numeric(df.get('Credit', 0))
+            # For credit cards: Debit = purchases (negative), Credit = payments (positive)
+            renamed_df['Amount'] = credit_col - debit_col
+        else:
+            print("⚠️ No amount column found - setting to 0")
+            print(f"   Available columns: {list(df.columns)}")
+            renamed_df['Amount'] = 0
     
     renamed_df["Source"] = "CreditCard"
     
