@@ -38,7 +38,9 @@ def load_categories(categories_file="categories.csv"):
         return categories
 
 def save_categories(categories_df, categories_file="categories.csv"):
-    """Save the categories mapping file."""
+    """Save the categories mapping file, removing duplicates."""
+    # Remove duplicate keywords, keeping the last occurrence (most recent rule)
+    categories_df = categories_df.drop_duplicates(subset=['Keyword'], keep='last')
     categories_df.to_csv(categories_file, index=False)
     print(f"💾 Saved {len(categories_df)} category rules to {categories_file}")
 
@@ -209,6 +211,17 @@ def extract_keyword_from_description(description):
     # Split and take first meaningful word/phrase
     parts = desc_clean.split()
     if parts:
+        # Check if this looks like a well-known brand that should use wildcard
+        first_word = parts[0]
+        common_brands = ['NETFLIX', 'SPOTIFY', 'AMAZON', 'UBER', 'AIRBNB', 'APPLE', 
+                        'STARBUCKS', 'TIM', 'COSTCO', 'WALMART', 'GOOGLE', 'MICROSOFT',
+                        'PAYPAL', 'EBAY', 'FACEBOOK', 'ADOBE', 'DROPBOX']
+        
+        # If it's a common brand, use wildcard
+        for brand in common_brands:
+            if first_word.startswith(brand):
+                return brand + '*'
+        
         # Try to get first 2-3 words as keyword (more specific)
         keyword_parts = []
         for part in parts[:3]:
@@ -216,7 +229,16 @@ def extract_keyword_from_description(description):
                 keyword_parts.append(part)
         
         if keyword_parts:
-            return ' '.join(keyword_parts[:2])  # Use first 2 meaningful words
+            # If it looks like a specific store/restaurant, use full name
+            keyword = ' '.join(keyword_parts[:2])  # Use first 2 meaningful words
+            
+            # But if it ends with numbers or looks like it has location/store info, add wildcard
+            if len(parts) > 2 and any(char.isdigit() for char in parts[-1]):
+                # Check if the base name might benefit from wildcard
+                if not any(c in keyword for c in ['*', '#', '@']):
+                    keyword = keyword_parts[0] + '*'
+            
+            return keyword
     
     # Fallback to first 20 chars of original
     return desc_upper[:20].strip()
@@ -554,12 +576,17 @@ def process_files(folder, categories_df, interactive=True):
     if interactive:
         print("\n🏷️ Checking for uncategorized transactions...")
         uncategorized_descriptions = set()
+        categorized_descriptions = {}  # Track what we've already categorized
         new_rules_added = False
         early_exit = False
         
         for idx, row in combined_df.iterrows():
             desc = row['Description']
             if pd.notna(desc):
+                # Check if we already categorized this exact description in this session
+                if desc in categorized_descriptions:
+                    continue
+                    
                 category = categorize_transaction(desc, categories_df)
                 if category == "Uncategorized" and desc not in uncategorized_descriptions:
                     uncategorized_descriptions.add(desc)
@@ -583,9 +610,12 @@ def process_files(folder, categories_df, interactive=True):
                         categories_df = pd.concat([categories_df, new_rule], ignore_index=True)
                         print(f"✅ Added rule: '{keyword}' → '{new_category}'")
                         new_rules_added = True
+                        
+                        # Mark this description as categorized for this session
+                        categorized_descriptions[desc] = new_category
         
-        if new_rules_added:
-            # Save updated categories
+        if new_rules_added or early_exit:
+            # Save updated categories (always save on exit, even without new rules)
             save_categories(categories_df)
             
         if early_exit:
