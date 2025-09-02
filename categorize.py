@@ -12,7 +12,10 @@ load_dotenv()
 def load_categories(categories_file="categories.csv"):
     """Load or create the categories mapping file."""
     if os.path.exists(categories_file):
-        return pd.read_csv(categories_file)
+        df = pd.read_csv(categories_file)
+        # Ensure keywords are uppercase for consistency
+        df['Keyword'] = df['Keyword'].str.upper()
+        return df
     else:
         # Seed with starter categories
         categories = pd.DataFrame([
@@ -243,13 +246,13 @@ def extract_keyword_from_description(description):
     # Fallback to first 20 chars of original
     return desc_upper[:20].strip()
 
-def categorize_transaction(description, categories_df):
+def categorize_transaction(description, categories_df, debug=False):
     """Match transaction description to category based on keywords with wildcard support."""
     if pd.isna(description):
         return "Uncategorized"
-    desc_upper = str(description).upper()
+    desc_upper = str(description).upper().strip()  # Strip whitespace
     for _, row in categories_df.iterrows():
-        keyword = row["Keyword"]
+        keyword = row["Keyword"].strip()  # Strip whitespace from keyword too
         if keyword.endswith("*"):
             # Wildcard matching - keyword without * must be at the start of a word
             base_keyword = keyword[:-1]
@@ -258,10 +261,14 @@ def categorize_transaction(description, categories_df):
             # Match if keyword is at start or after a space/special char
             pattern = r'(^|[\s\-_/])'+ re.escape(base_keyword)
             if re.search(pattern, desc_upper):
+                if debug:
+                    print(f"    DEBUG: Wildcard match '{keyword}' in '{desc_upper}'")
                 return row["Category"]
         else:
             # Exact substring matching (original behavior)
-            if keyword in desc_upper:
+            if keyword.upper() in desc_upper:  # Case insensitive comparison
+                if debug:
+                    print(f"    DEBUG: Exact match '{keyword}' in '{desc_upper}'")
                 return row["Category"]
     return "Uncategorized"
 
@@ -591,6 +598,10 @@ def process_files(folder, categories_df, interactive=True):
                 if category == "Uncategorized" and desc not in uncategorized_descriptions:
                     uncategorized_descriptions.add(desc)
                     
+                    # Show what keyword would be extracted for debugging
+                    potential_keyword = extract_keyword_from_description(desc)
+                    print(f"  📝 Potential keyword: '{potential_keyword}'")
+                    
                     # Offer to categorize this transaction
                     new_category = interactive_categorize(desc, categories_df)
                     
@@ -602,13 +613,21 @@ def process_files(folder, categories_df, interactive=True):
                         # Extract a keyword from the description
                         keyword = extract_keyword_from_description(desc)
                         
-                        # Add new rule to categories
+                        # Add new rule to categories (save keyword in uppercase for consistency)
                         new_rule = pd.DataFrame([{
-                            "Keyword": keyword,
+                            "Keyword": keyword.upper(),
                             "Category": new_category
                         }])
                         categories_df = pd.concat([categories_df, new_rule], ignore_index=True)
                         print(f"✅ Added rule: '{keyword}' → '{new_category}'")
+                        
+                        # Debug: Show if this rule would match the current description
+                        test_match = categorize_transaction(desc, categories_df)
+                        if test_match == new_category:
+                            print(f"  ✓ Rule successfully matches this transaction")
+                        else:
+                            print(f"  ⚠️ Warning: Rule doesn't match! Got '{test_match}' instead of '{new_category}'")
+                        
                         new_rules_added = True
                         
                         # Mark this description as categorized for this session
