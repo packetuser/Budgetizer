@@ -118,8 +118,9 @@ def interactive_categorize(description, categories_df):
     print("1. Select category manually")
     print("2. Let AI suggest a category")
     print("3. Skip this transaction")
+    print("4. Exit and save progress")
     
-    choice = input("Enter choice (1-3): ").strip()
+    choice = input("Enter choice (1-4): ").strip()
     
     if choice == "1":
         # Manual selection
@@ -130,8 +131,10 @@ def interactive_categorize(description, categories_df):
         
         while True:
             try:
-                cat_num = input("\nEnter category number (or 'new' to create new category): ").strip()
-                if cat_num.lower() == 'new':
+                cat_num = input("\nEnter category number (or 'new' to create new, 'exit' to save and quit): ").strip()
+                if cat_num.lower() == 'exit':
+                    return "EXIT_AND_SAVE"
+                elif cat_num.lower() == 'new':
                     new_category = input("Enter new category name: ").strip()
                     if new_category:
                         return new_category
@@ -176,6 +179,10 @@ def interactive_categorize(description, categories_df):
                         print("Invalid number. Please try again.")
                 except ValueError:
                     print("Invalid input. Please enter a number.")
+    
+    elif choice == "4":
+        # Exit and save
+        return "EXIT_AND_SAVE"
     
     # Choice 3 or invalid - skip
     return None
@@ -548,6 +555,7 @@ def process_files(folder, categories_df, interactive=True):
         print("\n🏷️ Checking for uncategorized transactions...")
         uncategorized_descriptions = set()
         new_rules_added = False
+        early_exit = False
         
         for idx, row in combined_df.iterrows():
             desc = row['Description']
@@ -559,7 +567,11 @@ def process_files(folder, categories_df, interactive=True):
                     # Offer to categorize this transaction
                     new_category = interactive_categorize(desc, categories_df)
                     
-                    if new_category:
+                    if new_category == "EXIT_AND_SAVE":
+                        print("\n🛑 Exiting categorization and saving progress...")
+                        early_exit = True
+                        break
+                    elif new_category:
                         # Extract a keyword from the description
                         keyword = extract_keyword_from_description(desc)
                         
@@ -575,6 +587,9 @@ def process_files(folder, categories_df, interactive=True):
         if new_rules_added:
             # Save updated categories
             save_categories(categories_df)
+            
+        if early_exit:
+            print("💾 Progress has been saved. You can continue categorization later.")
     
     return combined_df, categories_df
 
