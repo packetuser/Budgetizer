@@ -225,23 +225,34 @@ def extract_keyword_from_description(description):
             if first_word.startswith(brand):
                 return brand + '*'
         
-        # Try to get first 2-3 words as keyword (more specific)
+        # For restaurants/stores with potential variations (middle initials, locations, etc)
+        # Use wildcard if there are 2+ words and the second word is very short (likely initial)
+        if len(parts) >= 2:
+            # If second word is 1-2 chars (likely initial or abbreviation), use wildcard on first word
+            if len(parts[1]) <= 2:
+                return parts[0] + '*'
+            
+            # If it looks like a store/restaurant name, check for variations
+            # Names ending with common suffixes should use wildcards
+            location_indicators = ['OTTAWA', 'GATINEAU', 'DOWNTOWN', 'WEST', 'EAST', 'NORTH', 'SOUTH']
+            if any(part in location_indicators for part in parts[1:]):
+                # Has location info, use first word with wildcard
+                return parts[0] + '*'
+        
+        # Otherwise, extract first 2-3 meaningful words
         keyword_parts = []
         for part in parts[:3]:
-            if len(part) > 2 and not part.isdigit():
+            # Include all parts that aren't pure numbers
+            if not part.isdigit():
                 keyword_parts.append(part)
         
         if keyword_parts:
-            # If it looks like a specific store/restaurant, use full name
-            keyword = ' '.join(keyword_parts[:2])  # Use first 2 meaningful words
+            # If it has numbers at the end or special characters, use wildcard
+            if len(parts) > 2 and (any(char.isdigit() for char in parts[-1]) or '#' in desc_upper):
+                return keyword_parts[0] + '*'
             
-            # But if it ends with numbers or looks like it has location/store info, add wildcard
-            if len(parts) > 2 and any(char.isdigit() for char in parts[-1]):
-                # Check if the base name might benefit from wildcard
-                if not any(c in keyword for c in ['*', '#', '@']):
-                    keyword = keyword_parts[0] + '*'
-            
-            return keyword
+            # Otherwise return the full extracted phrase
+            return ' '.join(keyword_parts[:2])  # Usually first 2 words are enough
     
     # Fallback to first 20 chars of original
     return desc_upper[:20].strip()
