@@ -593,10 +593,29 @@ def process_files(folder, categories_df, interactive=True):
     # Interactive categorization for uncategorized items
     if interactive:
         print("\n🏷️ Checking for uncategorized transactions...")
+        
+        # First pass: count unique uncategorized descriptions
+        unique_uncategorized = set()
+        for idx, row in combined_df.iterrows():
+            desc = row['Description']
+            if pd.notna(desc):
+                category = categorize_transaction(desc, categories_df)
+                if category == "Uncategorized":
+                    unique_uncategorized.add(desc)
+        
+        total_to_categorize = len(unique_uncategorized)
+        if total_to_categorize == 0:
+            print("✅ All transactions are already categorized!")
+            return combined_df, categories_df
+        
+        print(f"📊 Found {total_to_categorize} unique uncategorized transaction(s)")
+        print("")
+        
         uncategorized_descriptions = set()
         categorized_descriptions = {}  # Track what we've already categorized
         new_rules_added = False
         early_exit = False
+        current_num = 0
         
         for idx, row in combined_df.iterrows():
             desc = row['Description']
@@ -608,6 +627,20 @@ def process_files(folder, categories_df, interactive=True):
                 category = categorize_transaction(desc, categories_df)
                 if category == "Uncategorized" and desc not in uncategorized_descriptions:
                     uncategorized_descriptions.add(desc)
+                    current_num += 1
+                    
+                    # Show progress
+                    print(f"\n{'━' * 60}")
+                    print(f"📍 Transaction {current_num} of {total_to_categorize}")
+                    
+                    # Progress bar
+                    progress = (current_num - 1) / total_to_categorize if total_to_categorize > 1 else 0
+                    bar_length = 40
+                    filled_length = int(bar_length * progress)
+                    bar = '█' * filled_length + '░' * (bar_length - filled_length)
+                    percentage = progress * 100
+                    print(f"Progress: [{bar}] {percentage:.1f}%")
+                    print(f"{'━' * 60}")
                     
                     # Show what keyword would be extracted for debugging
                     potential_keyword = extract_keyword_from_description(desc)
@@ -650,6 +683,10 @@ def process_files(folder, categories_df, interactive=True):
             
         if early_exit:
             print("💾 Progress has been saved. You can continue categorization later.")
+        elif current_num == total_to_categorize:
+            print(f"\n{'═' * 60}")
+            print(f"🎉 Categorization complete! All {total_to_categorize} transactions processed.")
+            print(f"{'═' * 60}")
     
     return combined_df, categories_df
 
