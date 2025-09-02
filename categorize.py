@@ -62,14 +62,14 @@ def get_available_categories():
     ])
     return sorted(list(all_categories))
 
-def guess_category_with_ai(description):
-    """Use Claude API to guess the category for a transaction."""
+def guess_category_with_ai(description, amount=None):
+    """Use Claude API to guess the category for a transaction with reasoning."""
     try:
         # Try to use Claude API if available
         api_key = os.environ.get('ANTHROPIC_API_KEY')
         if not api_key:
             print("⚠️ ANTHROPIC_API_KEY not found in environment variables")
-            return None
+            return None, None
             
         categories = get_available_categories()
         categories_str = ", ".join(categories)
@@ -80,16 +80,25 @@ def guess_category_with_ai(description):
             "content-type": "application/json"
         }
         
-        prompt = f"""Given this financial transaction description: '{description}'
+        amount_info = ""
+        if amount is not None:
+            if amount < 0:
+                amount_info = f" (expense of ${abs(amount):,.2f})"
+            elif amount > 0:
+                amount_info = f" (income of ${amount:,.2f})"
+        
+        prompt = f"""Given this financial transaction: '{description}'{amount_info}
         
         Choose the most appropriate category from this list:
         {categories_str}
         
-        Respond with ONLY the category name, nothing else."""
+        Respond in exactly this format:
+        CATEGORY: [chosen category]
+        REASON: [one sentence explaining why this category fits]"""
         
         data = {
             "model": "claude-3-haiku-20240307",
-            "max_tokens": 50,
+            "max_tokens": 100,
             "messages": [{"role": "user", "content": prompt}]
         }
         
@@ -101,24 +110,50 @@ def guess_category_with_ai(description):
         
         if response.status_code == 200:
             result = response.json()
-            category = result['content'][0]['text'].strip()
+            response_text = result['content'][0]['text'].strip()
+            
+            # Parse the response
+            lines = response_text.split('\n')
+            category = None
+            reason = None
+            
+            for line in lines:
+                if line.startswith('CATEGORY:'):
+                    category = line.replace('CATEGORY:', '').strip()
+                elif line.startswith('REASON:'):
+                    reason = line.replace('REASON:', '').strip()
+            
             # Validate that it's one of our categories
-            if category in categories:
-                return category
+            if category and category in categories:
+                return category, reason
             else:
                 print(f"⚠️ AI suggested unknown category: {category}")
-                return None
+                return None, None
         else:
             print(f"⚠️ Claude API error: {response.status_code}")
-            return None
+            return None, None
             
     except Exception as e:
         print(f"⚠️ Error calling Claude API: {e}")
-        return None
+        return None, None
 
-def interactive_categorize(description, categories_df):
+def interactive_categorize(description, categories_df, amount=None):
     """Interactively categorize an uncategorized transaction."""
-    print(f"\n🔍 Uncategorized transaction: '{description}'")
+    if amount is not None:
+        # Format amount with proper sign and color
+        if amount < 0:
+            amount_str = f"${abs(amount):,.2f} (expense)"
+            amount_display = f"💰 Amount: \033[91m-{amount_str}\033[0m"  # Red for expenses
+        elif amount > 0:
+            amount_str = f"${amount:,.2f} (income)"
+            amount_display = f"💰 Amount: \033[92m+{amount_str}\033[0m"  # Green for income
+        else:
+            amount_display = "💰 Amount: $0.00"
+        
+        print(f"\n🔍 Uncategorized transaction: '{description}'")
+        print(amount_display)
+    else:
+        print(f"\n🔍 Uncategorized transaction: '{description}'")
     print("Choose an option:")
     print("1. Select category manually")
     print("2. Let AI suggest a category")
@@ -155,35 +190,23 @@ def interactive_categorize(description, categories_df):
     elif choice == "2":
         # AI suggestion
         print("🤖 Asking Claude for suggestion...")
-        suggested = guess_category_with_ai(description)
+        suggested, reason = guess_category_with_ai(description, amount)
         
         if suggested:
             print(f"\n💡 AI suggests: '{suggested}'")
+            if reason:
+                print(f"📝 Reasoning: {reason}")
             confirm = input("Accept this suggestion? (Y/n): ").strip().lower()
             if confirm != 'n':
                 return suggested
             else:
                 # Fall back to manual selection
                 print("\nFalling back to manual selection...")
-                return interactive_categorize(description, categories_df)
+                return interactive_categorize(description, categories_df, amount)
         else:
             print("\n⚠️ AI couldn't suggest a category. Falling back to manual selection...")
-            # Recursively call with manual selection
-            categories = get_available_categories()
-            print("\nAvailable categories:")
-            for i, cat in enumerate(categories, 1):
-                print(f"{i:2}. {cat}")
-            
-            while True:
-                try:
-                    cat_num = input("\nEnter category number: ").strip()
-                    cat_idx = int(cat_num) - 1
-                    if 0 <= cat_idx < len(categories):
-                        return categories[cat_idx]
-                    else:
-                        print("Invalid number. Please try again.")
-                except ValueError:
-                    print("Invalid input. Please enter a number.")
+            # Fall back to manual selection by recursively calling with choice 1
+            return interactive_categorize(description, categories_df, amount)
     
     elif choice == "4":
         # Exit and save
@@ -646,8 +669,11 @@ def process_files(folder, categories_df, interactive=True):
                     potential_keyword = extract_keyword_from_description(desc)
                     print(f"  📝 Potential keyword: '{potential_keyword}'")
                     
+                    # Get the amount for this transaction
+                    transaction_amount = row.get('Amount', None)
+                    
                     # Offer to categorize this transaction
-                    new_category = interactive_categorize(desc, categories_df)
+                    new_category = interactive_categorize(desc, categories_df, amount=transaction_amount)
                     
                     if new_category == "EXIT_AND_SAVE":
                         print("\n🛑 Exiting categorization and saving progress...")
