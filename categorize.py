@@ -229,8 +229,14 @@ def extract_keyword_from_description(description):
         if desc_upper.startswith(prefix):
             desc_upper = desc_upper[len(prefix):]
     
-    # Take the first meaningful part (before numbers/dates)
+    # Special handling for parking codes (IMPARK, PARK+, etc with numbers)
     import re
+    if re.match(r'^(IMPARK|PARK\+|PARKING|PARK)\d+', desc_upper):
+        # Extract just the parking company name
+        match = re.match(r'^(IMPARK|PARK\+|PARKING|PARK)', desc_upper)
+        if match:
+            return match.group(1) + '*'
+    
     # Remove date patterns and long numbers
     desc_clean = re.sub(r'\d{6,}|\d{2}/\d{2}', '', desc_upper)
     
