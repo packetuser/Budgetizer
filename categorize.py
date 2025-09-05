@@ -4,10 +4,31 @@ import pandas as pd
 import numpy as np
 import requests
 import json
+
+import os
+import pandas as pd
+from dotenv import load_dotenv
+
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
 load_dotenv()
+
+def export_category_rules(categories_df, export_path="categories_export.csv"):
+    """Export category rules to a CSV file."""
+    categories_df.to_csv(export_path, index=False)
+    print(f"\U0001F4E4 Exported category rules to {export_path}")
+
+def import_category_rules(import_path="categories_import.csv"):
+    """Import category rules from a CSV file."""
+    if os.path.exists(import_path):
+        df = pd.read_csv(import_path)
+        df['Keyword'] = df['Keyword'].str.upper()
+        print(f"\U0001F4E5 Imported {len(df)} category rules from {import_path}")
+        return df
+    else:
+        print(f"\u274C Import file not found: {import_path}")
+        return None
 
 def load_categories(categories_file="categories.csv"):
     """Load or create the categories mapping file."""
@@ -718,6 +739,21 @@ def process_files(folder, categories_df, interactive=True):
                         else:
                             print(f"  ⚠️ Warning: Rule doesn't match! Got '{test_match}' instead of '{new_category}'")
                         
+                    def export_category_rules(categories_df, export_path="categories_export.csv"):
+                        """Export category rules to a CSV file."""
+                        categories_df.to_csv(export_path, index=False)
+                        print(f"\U0001F4E4 Exported category rules to {export_path}")
+
+                    def import_category_rules(import_path="categories_import.csv"):
+                        """Import category rules from a CSV file."""
+                        if os.path.exists(import_path):
+                            df = pd.read_csv(import_path)
+                            df['Keyword'] = df['Keyword'].str.upper()
+                            print(f"\U0001F4E5 Imported {len(df)} category rules from {import_path}")
+                            return df
+                        else:
+                            print(f"\u274C Import file not found: {import_path}")
+                            return None
                         new_rules_added = True
                         
                         # Mark this description as categorized for this session
@@ -867,11 +903,23 @@ if __name__ == "__main__":
     print("Select mode:")
     print("1. Normal processing")
     print("2. Debug mode (inspect file structures)")
-    
+    print("3. Export category rules")
+    print("4. Import category rules and overwrite")
+
     choice = input("Enter choice [1]: ").strip()
-    
+
     if choice == "2":
         debug_mode()
+    elif choice == "3":
+        categories_df = load_categories()
+        export_category_rules(categories_df)
+    elif choice == "4":
+        import_path = input("Enter the filename to import category rules from [categories_import.csv]: ").strip()
+        if not import_path:
+            import_path = "categories_import.csv"
+        imported_df = import_category_rules(import_path)
+        if imported_df is not None:
+            save_categories(imported_df)
     else:
         main()
 
